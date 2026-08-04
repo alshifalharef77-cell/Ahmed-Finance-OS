@@ -1,5 +1,6 @@
 # Ahmed Finance OS — Alpha 0.2
 
+
 Personal, text-based finance terminal. Data stays in the browser's IndexedDB (`FinanceDB`) and works offline. Google Sheets is an optional automatic backup relay; it is not the primary datastore.
 
 ## Daily use
