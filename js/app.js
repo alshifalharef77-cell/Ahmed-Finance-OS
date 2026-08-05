@@ -117,7 +117,7 @@ async function sync(reason = 'change') {
 async function changed(reason) { await loadData(); void sync(reason); }
 async function rememberUndo(action) { lastUndo = action; }
 
-function showLock(message = '') { output.replaceChildren(); print(`AHMED FINANCE OS — ALPHA 0.2\n${divider()}\nCloud sync is locked.\nEnter your personal PIN to unlock your data.${message ? `\n\n${message}` : ''}`, 'warning'); input.type = 'password'; input.placeholder = 'enter PIN'; input.autocomplete = 'current-password'; input.focus(); }
+function showLock(message = '') { output.replaceChildren(); print(`AHMED FINANCE OS — ALPHA 0.2.5\n${divider()}\nCloud sync is locked.\nEnter your personal PIN to unlock your data.${message ? `\n\n${message}` : ''}`, 'warning'); input.type = 'password'; input.placeholder = 'enter PIN'; input.autocomplete = 'current-password'; input.focus(); }
 async function unlock(pin) {
   const status = $('#connectionStatus'); status.textContent = 'CLOUD / CHECKING';
   try {
