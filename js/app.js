@@ -42,16 +42,11 @@ function applyTheme() { const accent = themes[preferences.theme] || themes.green
 
 async function seedCollections() {
   const existingWallets = await all('wallets');
-
-  console.log("Wallet count:", existingWallets.length);
-  console.table(existingWallets);
-
-  if (!existingWallets.length) {
-    console.log("Seeding wallets...");
-    for (const wallet of baseWallets) {
-      await add('wallets', wallet);
-    }
-  }
+  if (!existingWallets.length) for (const wallet of baseWallets) await add('wallets', wallet);
+  const existingCategories = await all('categories');
+  const legacy = (await Promise.all(stores.map(all))).flat().map(row => row.category).filter(Boolean);
+  for (const name of [...new Set(legacy)]) if (!existingCategories.some(item => item.name.toLowerCase() === name.toLowerCase())) await add('categories', { name });
+}
 
   ...
 }
