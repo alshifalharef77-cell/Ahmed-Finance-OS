@@ -42,10 +42,18 @@ function applyTheme() { const accent = themes[preferences.theme] || themes.green
 
 async function seedCollections() {
   const existingWallets = await all('wallets');
-  if (!existingWallets.length) for (const wallet of baseWallets) await add('wallets', wallet);
-  const existingCategories = await all('categories');
-  const legacy = (await Promise.all(stores.map(all))).flat().map(row => row.category).filter(Boolean);
-  for (const name of [...new Set(legacy)]) if (!existingCategories.some(item => item.name.toLowerCase() === name.toLowerCase())) await add('categories', { name });
+
+  console.log("Wallet count:", existingWallets.length);
+  console.table(existingWallets);
+
+  if (!existingWallets.length) {
+    console.log("Seeding wallets...");
+    for (const wallet of baseWallets) {
+      await add('wallets', wallet);
+    }
+  }
+
+  ...
 }
 async function loadData() {
   wallets = await all('wallets'); categories = await all('categories'); dues = await all('dues'); favorites = await all('favorites');
@@ -128,7 +136,7 @@ async function saveTransaction(type, values) {
   if (type === 'exp') await suggestDue(record);
   showDashboard();
 }
-async function suggestDue(record) { if (!preferences.dueSuggestions) return; const match = dues.find(due => !due.paid && Number(due.amount) === Number(record.amount) && due.title.toLowerCase().includes(String(record.category || record.description).toLowerCase())); if (match) { pendingDueMatch = { due: match, transaction: record }; print(`Possible Due match: ${match.title} — ${money(match.amount)} — ${dateText(match.dueDate)}\nMark this Due as paid? [Y/n]`, 'warning'); input.placeholder = 'Y marks it paid · n keeps it open'; } }
+async function suggestDue(record) { if (!preferencess.dueSuggestions) return; const match = dues.find(due => !due.paid && Number(due.amount) === Number(record.amount) && due.title.toLowerCase().includes(String(record.category || record.description).toLowerCase())); if (match) { pendingDueMatch = { due: match, transaction: record }; print(`Possible Due match: ${match.title} — ${money(match.amount)} — ${dateText(match.dueDate)}\nMark this Due as paid? [Y/n]`, 'warning'); input.placeholder = 'Y marks it paid · n keeps it open'; } }
 
 function entryFields(type) { if (type === 'fuel') return [['Cost', 'Example: 500'], ['Odometer', 'Example: 45200'], ['Fill type', 'full or partial'], ['Wallet code', `Enter = ${preferences.lastWallet.toUpperCase()} ${walletName(preferences.lastWallet)}`], ['Note', 'Optional — Enter to skip']]; return [['Amount', 'Example: 120'], ['Category', `Enter = ${preferences.lastCategory || 'required'}`], ['Wallet code', `Enter = ${preferences.lastWallet.toUpperCase()} ${walletName(preferences.lastWallet)}`], ['Note', 'Optional — Enter to skip']]; }
 function promptEntry() { const [label, hint] = entryFields(entryDraft.type)[entryDraft.step]; print(`${label}: ${hint}`, 'muted'); input.placeholder = `${hint} · type cancel to stop`; }
