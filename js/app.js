@@ -48,8 +48,7 @@ async function seedCollections() {
   for (const name of [...new Set(legacy)]) if (!existingCategories.some(item => item.name.toLowerCase() === name.toLowerCase())) await add('categories', { name });
 }
 
-  ...
-}
+
 async function loadData() {
   wallets = await all('wallets'); categories = await all('categories'); dues = await all('dues'); favorites = await all('favorites');
   const rows = await Promise.all(stores.map(all));
