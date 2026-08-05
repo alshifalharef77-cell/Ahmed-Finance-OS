@@ -1,6 +1,7 @@
 const DB_NAME = 'FinanceDB';
 const DB_VERSION = 2;
 const STORES = ['expenses', 'income', 'uber', 'fuel', 'investments', 'maintenance', 'budgets', 'goals', 'settings', 'metadata', 'backups', 'categories', 'wallets', 'dues', 'favorites'];
+export const stores = STORES;
 
 export function openDB() {
   return new Promise((resolve, reject) => {
@@ -55,6 +56,16 @@ export async function update(store, id, changes) {
     };
     get.onerror = () => reject(get.error);
     tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function upsert(store, record) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).put(record);
+    tx.oncomplete = () => resolve(record);
     tx.onerror = () => reject(tx.error);
   });
 }

@@ -1,7 +1,6 @@
 # Ahmed Finance OS — Alpha 0.2
- 
- 
-Personal, text-based finance terminal. Data stays in the browser's IndexedDB (`FinanceDB`) and works offline. Google Sheets is an optional automatic backup relay; it is not the primary datastore.
+
+Personal, text-based finance terminal. Data is stored locally in IndexedDB for offline use and synchronized to Neon Postgres through private Vercel functions.
 
 ## Daily use
 
@@ -34,15 +33,17 @@ Wallet codes start with: `C Cash`, `T Telda`, `N NBK`, `B CIB`, `I InstaPay`, `O
 
 Fuel has no category. Enter cost, odometer, `full` or `partial`, optional wallet, and note. Liters are calculated from `settings fuelprice <EGP>`.
 
-## Google Sheets backup (optional)
+## Neon cloud sync and PIN
 
-The included Vercel endpoint `api/sync.js` forwards a complete encrypted-transport JSON backup after each local change. To enable it, create a Google Apps Script Web App (or another private receiver) that writes the received JSON to your chosen Sheet, then set this Vercel environment variable:
+The Vercel project must be connected to the Neon database. Add one Environment Variable in Vercel before deploying:
 
 ```text
-GOOGLE_SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/.../exec
+APP_PIN=choose-a-private-numeric-or-long PIN
 ```
 
-Do not put Google credentials or Web App secrets in browser JavaScript. Until this variable is configured, the app stays local and displays `LOCAL / READY`.
+Apply it to **Production** only and keep it marked Sensitive. `DATABASE_URL` is already added by the Neon integration; never copy it into source code.
+
+On the deployed Vercel URL, the app asks for `APP_PIN` before reading or writing cloud data. Each local change is then pushed to Neon, while IndexedDB remains available as the offline copy. Opening the same app on a new device and entering the PIN downloads the saved cloud data.
 
 ## Data safety
 

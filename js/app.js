@@ -1,4 +1,4 @@
-import { add, all, exportData, softDelete, update } from './db.js';
+import { add, all, exportData, softDelete, stores as databaseStores, update, upsert } from './db.js';
 
 const $ = selector => document.querySelector(selector);
 const output = $('#terminalOutput');
@@ -15,6 +15,7 @@ let preferences = structuredClone(defaults);
 let transactions = [], wallets = [], categories = [], dues = [], favorites = [], listedTransactions = [];
 let entryDraft = null, editDraft = null, dueDraft = null, dueEditDraft = null, pendingDueMatch = null, lastUndo = null;
 const history = []; let historyIndex = 0;
+let cloudUnlocked = false, cloudPin = sessionStorage.getItem('finance-pin') || '';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const money = value => `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(Number(value) || 0)} EGP`;
@@ -80,13 +81,40 @@ function showDashboard() {
 
 function showHelp() { print(`ALPHA 0.2 COMMANDS\n${divider()}\ndash | home                         dashboard\nexp | inc | fuel                    add a transaction\nlist [all|exp|inc|fuel]             list transactions\nfilter <category> | search <text>   find transactions\nedit <row> | delete <row>           change a listed transaction\nmove <amount> <from> <to>           transfer between wallets\ncategory | wallet                   manage categories and wallets\nfuel stats                           fuel performance\ndue add | due list | due done <row> manage dues\nfavorite | fav                      saved transaction templates\nrepeat | undo                       repeat or undo last change\nsettings | theme                    preferences\nreport | backup | clear | help       reports and utilities\n\nQUICK MODE\nexp <amount> <category> [wallet] [note]\ninc <amount> <category> [wallet] [note]\nfuel <cost> <odometer> <full|partial> [wallet] [note]\n\nWallet codes: ${activeWallets().map(wallet => `${wallet.code.toUpperCase()} ${wallet.name}`).join(' | ')}`, 'muted'); }
 
-async function sync(reason) {
-  const status = $('#connectionStatus'); status.textContent = 'SHEETS / SYNCING';
-  try { const response = await fetch('/api/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason, data: await exportData() }) }); const result = await response.json(); status.textContent = result.configured ? 'SHEETS / SYNCED' : 'LOCAL / READY'; }
-  catch { status.textContent = 'LOCAL / WAITING'; }
+async function mergeCloudData(remote) {
+  for (const store of databaseStores) {
+    const local = await all(store, true);
+    const localById = new Map(local.map(record => [record.id, record]));
+    for (const record of remote.data?.[store] || []) {
+      const current = localById.get(record.id);
+      if (!current || new Date(record.updatedAt || 0) > new Date(current.updatedAt || 0)) await upsert(store, record);
+    }
+  }
+}
+async function sync(reason = 'change') {
+  if (!cloudUnlocked) return;
+  const status = $('#connectionStatus'); status.textContent = 'CLOUD / SYNCING';
+  try {
+    const response = await fetch('/api/finance', { method: 'PUT', headers: { 'content-type': 'application/json', 'x-finance-pin': cloudPin, 'x-sync-reason': reason }, body: JSON.stringify(await exportData()) });
+    if (!response.ok) throw new Error('sync failed');
+    status.textContent = 'CLOUD / SYNCED';
+  } catch { status.textContent = 'CLOUD / WAITING'; }
 }
 async function changed(reason) { await loadData(); void sync(reason); }
 async function rememberUndo(action) { lastUndo = action; }
+
+function showLock(message = '') { output.replaceChildren(); print(`AHMED FINANCE OS — ALPHA 0.2\n${divider()}\nCloud sync is locked.\nEnter your personal PIN to unlock your data.${message ? `\n\n${message}` : ''}`, 'warning'); input.type = 'password'; input.placeholder = 'enter PIN'; input.autocomplete = 'current-password'; input.focus(); }
+async function unlock(pin) {
+  const status = $('#connectionStatus'); status.textContent = 'CLOUD / CHECKING';
+  try {
+    const response = await fetch('/api/finance', { headers: { 'x-finance-pin': pin } });
+    const payload = await response.json();
+    if (!response.ok) { showLock(payload.error || 'PIN was not accepted.'); return; }
+    cloudPin = pin; cloudUnlocked = true; sessionStorage.setItem('finance-pin', pin);
+    await mergeCloudData(payload); await loadData(); await sync('unlock');
+    input.type = 'text'; input.autocomplete = 'off'; input.placeholder = 'type help to see commands'; status.textContent = 'CLOUD / SYNCED'; output.replaceChildren(); showDashboard();
+  } catch { showLock('Unable to reach the cloud. Check the deployed Vercel site.'); }
+}
 
 function parseQuick(type, parts) {
   const amount = Number(parts[0]); if (!validAmount(amount)) return { error: 'Error: amount must be a positive number.' };
@@ -158,8 +186,11 @@ async function execute(raw, echo = true) { if (pendingDueMatch) { if (echo) prin
   else if (['exp', 'inc', 'fuel'].includes(action)) await startTransaction(action, parts);
   else if (action === 'dash' || action === 'home') showDashboard(); else if (action === 'list') listTransactions(parts); else if (action === 'filter') listTransactions(['cat', ...parts]); else if (action === 'search') searchTransactions(parts.join(' ')); else if (action === 'edit') await startEdit(parts[0]); else if (action === 'delete') await deleteTransaction(parts[0]); else if (action === 'category') await manageCategory(parts); else if (action === 'wallet') await manageWallet(parts); else if (action === 'due') await manageDue(parts); else if (action === 'favorite') await manageFavorite(parts); else if (action === 'move') await moveMoney(parts); else if (action === 'repeat') { const last = [...transactions].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]; if (!last) print('No transaction to repeat.', 'warning'); else await saveTransaction(last.type, { ...last, id: undefined, createdAt: undefined, updatedAt: undefined, date: today() }); } else if (action === 'undo') await undo(); else if (action === 'settings') await changeSettings(parts); else if (action === 'theme') await setTheme(parts[0]); else if (action === 'report') report(); else if (action === 'backup') await downloadBackup(); else if (action === 'help') showHelp(); else if (action === 'clear') output.replaceChildren(); else print(`Error: command not found: ${action}\nType help to see available commands.`, 'error'); scrollToLatest(); }
 
-$('#commandForm').addEventListener('submit', async event => { event.preventDefault(); const value = input.value; if (value.trim()) { history.push(value); historyIndex = history.length; } input.value = ''; try { await execute(value); } catch (error) { print(`Error: ${error.message || 'operation failed.'}`, 'error'); } input.focus(); scrollToLatest(); });
+$('#commandForm').addEventListener('submit', async event => { event.preventDefault(); const value = input.value; input.value = ''; if (!cloudUnlocked && location.protocol !== 'file:') { await unlock(value); return; } if (value.trim()) { history.push(value); historyIndex = history.length; } try { await execute(value); } catch (error) { print(`Error: ${error.message || 'operation failed.'}`, 'error'); } input.focus(); scrollToLatest(); });
 input.addEventListener('keydown', event => { if (event.key === 'ArrowUp' && history.length) { event.preventDefault(); historyIndex = Math.max(0, historyIndex - 1); input.value = history[historyIndex]; } if (event.key === 'ArrowDown' && history.length) { event.preventDefault(); historyIndex = Math.min(history.length, historyIndex + 1); input.value = historyIndex === history.length ? '' : history[historyIndex]; } });
 document.addEventListener('click', event => { if (!event.target.closest('.terminal-output')) input.focus(); });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(() => {});
-Promise.resolve().then(loadPreferences).then(seedCollections).then(loadData).then(showDashboard).catch(() => print('Error: unable to open local database.', 'error'));
+Promise.resolve().then(loadPreferences).then(seedCollections).then(loadData).then(async () => {
+  if (location.protocol === 'file:') { $('#connectionStatus').textContent = 'LOCAL / READY'; showDashboard(); return; }
+  if (cloudPin) await unlock(cloudPin); else showLock();
+}).catch(() => print('Error: unable to open local database.', 'error'));
