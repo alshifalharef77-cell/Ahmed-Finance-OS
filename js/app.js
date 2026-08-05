@@ -40,6 +40,7 @@ async function savePreferences() { const item = await getSetting('app-preference
 async function loadPreferences() { const item = await getSetting('app-preferences'); preferences = { ...structuredClone(defaults), ...(item?.value || {}), dashboard: { ...defaults.dashboard, ...(item?.value?.dashboard || {}) } }; applyTheme(); }
 function applyTheme() { const accent = themes[preferences.theme] || themes.green; document.documentElement.style.setProperty('--accent', accent); document.documentElement.style.setProperty('--line', preferences.theme === 'orange' ? '#553817' : '#263129'); document.documentElement.style.setProperty('--bg', preferences.highContrast ? '#000000' : '#0b0b0b'); }
 
+
 async function seedCollections() {
   const existingWallets = await all('wallets');
   if (!existingWallets.length) {
