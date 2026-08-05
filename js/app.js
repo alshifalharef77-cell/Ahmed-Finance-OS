@@ -84,7 +84,7 @@ function dueSummary() { const open = dues.filter(due => !due.paid).sort((a, b) =
 function transactionTable(rows, numbered = false) { if (!rows.length) return 'No transactions found.'; const header = `${numbered ? '#   ' : ''}DATE         TYPE      AMOUNT          WALLET         CATEGORY / ODOMETER       DESCRIPTION`; const lines = rows.map((row, index) => { const detail = row.type === 'fuel' ? `${row.odometer || '-'} km` : row.category; return `${numbered ? `${pad(index + 1, 3)} ` : ''}${pad(dateText(row.date), 12)} ${pad(typeLabels[row.type], 9)} ${pad(money(row.amount), 15)} ${pad(walletName(row.walletCode), 14)} ${pad(detail, 23)} ${String(row.description || '-').slice(0, 24)}`; }); return [header, divider(), ...lines].join('\n'); }
 
 function showDashboard() {
-  const parts = [`Welcome back, Ahmed.\n\nAhmed Finance OS — Alpha 0.2\n${new Intl.DateTimeFormat('en-GB', { dateStyle: 'full' }).format(new Date())}\nYour finance terminal is ready.`, ''];
+  const parts = [`Welcome back, Ahmed.\n\nAhmed Finance OS — Alpha 0.2.5\n${new Intl.DateTimeFormat('en-GB', { dateStyle: 'full' }).format(new Date())}\nYour finance terminal is ready.`, ''];
   if (preferences.dashboard.today) parts.push(summary('TODAY', 'today'), '');
   if (preferences.dashboard.week) parts.push(summary('WEEK', 'week'), '');
   if (preferences.dashboard.month) parts.push(summary('MONTH', 'month'), '');
