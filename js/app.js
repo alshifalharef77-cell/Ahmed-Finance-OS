@@ -84,7 +84,7 @@ function dueSummary() { const open = dues.filter(due => !due.paid).sort((a, b) =
 function transactionTable(rows, numbered = false) { if (!rows.length) return 'No transactions found.'; const header = `${numbered ? '#   ' : ''}DATE         TYPE      AMOUNT          WALLET         CATEGORY / ODOMETER       DESCRIPTION`; const lines = rows.map((row, index) => { const detail = row.type === 'fuel' ? `${row.odometer || '-'} km` : row.category; return `${numbered ? `${pad(index + 1, 3)} ` : ''}${pad(dateText(row.date), 12)} ${pad(typeLabels[row.type], 9)} ${pad(money(row.amount), 15)} ${pad(walletName(row.walletCode), 14)} ${pad(detail, 23)} ${String(row.description || '-').slice(0, 24)}`; }); return [header, divider(), ...lines].join('\n'); }
 
 function showDashboard() {
-  const parts = [`Welcome back, Ahmed.\n\nAhmed Finance OS — Alpha 0.2.5\n${new Intl.DateTimeFormat('en-GB', { dateStyle: 'full' }).format(new Date())}\nYour finance terminal is ready.`, ''];
+  const parts = [`Welcome back, Ahmed.\n\nAhmed Finance OS — Alpha 0.2.7\n${new Intl.DateTimeFormat('en-GB', { dateStyle: 'full' }).format(new Date())}\nYour finance terminal is ready.`, ''];
   if (preferences.dashboard.today) parts.push(summary('TODAY', 'today'), '');
   if (preferences.dashboard.week) parts.push(summary('WEEK', 'week'), '');
   if (preferences.dashboard.month) parts.push(summary('MONTH', 'month'), '');
@@ -93,7 +93,7 @@ function showDashboard() {
   print(parts.join('\n'), 'success');
 }
 
-function showHelp() { print(`ALPHA 0.2 COMMANDS\n${divider()}\ndash | home                         dashboard\nexp | inc | fuel                    add a transaction\nlist [all|exp|inc|fuel]             list transactions\nfilter <category> | search <text>   find transactions\nedit <row> | delete <row>           change a listed transaction\nmove <amount> <from> <to>           transfer between wallets\ncategory | wallet                   manage categories and wallets\nfuel stats                           fuel performance\ndue add | due list | due done <row> manage dues\nfavorite | fav                      saved transaction templates\nrepeat | undo                       repeat or undo last change\nsettings | theme                    preferences\nreport | backup | clear | help       reports and utilities\n\nQUICK MODE\nexp <amount> <category> [wallet] [note]\ninc <amount> <category> [wallet] [note]\nfuel <cost> <odometer> <full|partial> [wallet] [note]\n\nWallet codes: ${activeWallets().map(wallet => `${wallet.code.toUpperCase()} ${wallet.name}`).join(' | ')}`, 'muted'); }
+function showHelp() { print(`ALPHA 0.2.7 COMMANDS\n${divider()}\ndash | home                         dashboard\nexp | inc | fuel                    add a transaction\nlist [all|exp|inc|fuel]             list transactions\nfilter <category> | search <text>   find transactions\nedit <row> | delete <row>           change a listed transaction\nmove <amount> <from> <to>           transfer between wallets\ncategory | wallet                   manage categories and wallets\nfuel stats                           fuel performance\ndue add | due list | due done <row> manage dues\nfavorite | fav                      saved transaction templates\nrepeat | undo                       repeat or undo last change\nsettings | theme                    preferences\nreport | backup | clear | help       reports and utilities\n\nQUICK MODE\nexp <amount> <category> [wallet] [note]\ninc <amount> <category> [wallet] [note]\nfuel <cost> <odometer> <full|partial> [wallet] [note]\n\nWallet codes: ${activeWallets().map(wallet => `${wallet.code.toUpperCase()} ${wallet.name}`).join(' | ')}`, 'muted'); }
 
 async function mergeCloudData(remote) {
   for (const store of databaseStores) {
@@ -117,7 +117,7 @@ async function sync(reason = 'change') {
 async function changed(reason) { await loadData(); void sync(reason); }
 async function rememberUndo(action) { lastUndo = action; }
 
-function showLock(message = '') { output.replaceChildren(); print(`AHMED FINANCE OS — ALPHA 0.2.5\n${divider()}\nCloud sync is locked.\nEnter your personal PIN to unlock your data.${message ? `\n\n${message}` : ''}`, 'warning'); input.type = 'password'; input.placeholder = 'enter PIN'; input.autocomplete = 'current-password'; input.focus(); }
+function showLock(message = '') { output.replaceChildren(); print(`AHMED FINANCE OS — ALPHA 0.2.7\n${divider()}\nCloud sync is locked.\nEnter your personal PIN to unlock your data.${message ? `\n\n${message}` : ''}`, 'warning'); input.type = 'password'; input.placeholder = 'enter PIN'; input.autocomplete = 'current-password'; input.focus(); }
 async function unlock(pin) {
   const status = $('#connectionStatus'); status.textContent = 'CLOUD / CHECKING';
   try {
