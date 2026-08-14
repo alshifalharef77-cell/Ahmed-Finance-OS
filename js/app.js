@@ -355,11 +355,360 @@ async function downloadBackup() { const data = await exportData(); const url = U
 function report() { const monthRows = transactions.filter(row => inPeriod(row.date, 'month') && row.type === 'exp'); const groups = Object.entries(monthRows.reduce((map, row) => ({ ...map, [row.category]: (map[row.category] || 0) + Number(row.amount) }), {})).sort((a, b) => b[1] - a[1]).slice(0, 5); print(`MONTHLY REPORT\n${divider()}\nTop spending categories\n${groups.map(([name, amount]) => `${pad(name, 24)} ${money(amount)}`).join('\n') || 'No expenses this month.'}\n\nFuel total: ${money(periodTotals('month').fuel)}`, 'muted'); }
 
 async function handleDueMatch(raw) { const answer = raw.trim().toLowerCase(); if (['y', 'yes', ''].includes(answer)) { const due = pendingDueMatch.due; if (due.repeat && due.repeat !== 'none') await update('dues', due.id, { dueDate: nextDueDate(due.dueDate, due.repeat), paid: false }); else await update('dues', due.id, { paid: true, paidAt: new Date().toISOString() }); await changed('due-match'); print(`Marked Due as paid: ${due.title}`, 'success'); } else print('Expense kept as a normal transaction; Due remains open.', 'muted'); pendingDueMatch = null; input.placeholder = 'type help to see commands'; }
-async function execute(raw, echo = true) { if (pendingDueMatch) { if (echo) print(`ahmed@finance:~$ ${raw}`, 'command'); await handleDueMatch(raw); return; } if (editDraft) { if (echo) print(`ahmed@finance:~$ ${raw}`, 'command'); await continueEdit(raw); return; } if (entryDraft) { if (echo) print(`ahmed@finance:~$ ${raw}`, 'command'); await continueEntry(raw); return; } if (dueDraft) { if (echo) print(`ahmed@finance:~$ ${raw}`, 'command'); await continueDue(raw); return; } if (dueEditDraft) { if (echo) print(`ahmed@finance:~$ ${raw}`, 'command'); await continueDueEdit(raw); return; }
-  const command = raw.trim(); if (!command) return; if (echo) print(`ahmed@finance:~$ ${command}`, 'command'); const [rawAction, ...parts] = command.split(/\s+/); const aliases = { expense: 'exp', income: 'inc', dashboard: 'dash', filter: 'filter', fav: 'favorite', categories: 'category', wallets: 'wallet' }; const action = aliases[rawAction.toLowerCase()] || rawAction.toLowerCase();
-  if (action === 'fuel' && ['stats', 'page'].includes(parts[0])) fuelPage();
-  else if (['exp', 'inc', 'fuel'].includes(action)) await startTransaction(action, parts);
-  else if (action === 'dash' || action === 'home') showDashboard(); else if (action === 'list') listTransactions(parts); else if (action === 'filter') listTransactions(['cat', ...parts]); else if (action === 'search') searchTransactions(parts.join(' ')); else if (action === 'edit') await startEdit(parts[0]); else if (action === 'delete') await deleteTransaction(parts[0]); else if (action === 'category') await manageCategory(parts); else if (action === 'wallet') await manageWallet(parts); else if (action === 'due') await manageDue(parts); else if (action === 'favorite') await manageFavorite(parts); else if (action === 'move') await moveMoney(parts); else if (action === 'repeat') { const last = [...transactions].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]; if (!last) print('No transaction to repeat.', 'warning'); else await saveTransaction(last.type, { ...last, id: undefined, createdAt: undefined, updatedAt: undefined, date: today() }); } else if (action === 'undo') await undo(); else if (action === 'settings') await changeSettings(parts); else if (action === 'theme') await setTheme(parts[0]); else if (action === 'report') report(); else if (action === 'backup') await downloadBackup(); else if (action === 'help') showHelp(); else if (action === 'clear') output.replaceChildren(); else print(`Error: command not found: ${action}\nType help to see available commands.`, 'error'); scrollToLatest(); }
+async function cleanupAuditAdjustments() {
+  const auditRecords = transactions.filter(row =>
+    row.type === 'inc' &&
+    row.reconciliation === true &&
+    row.category === 'Balance Adjustment' &&
+    row.description === 'Manual Wallet Reconciliation'
+  );
+
+  if (!auditRecords.length) {
+    print('No Balance Adjustment income records found.', 'warning');
+    return;
+  }
+
+  for (const record of auditRecords) {
+    await softDelete('income', record.id);
+  }
+
+  listedTransactions = [];
+  await changed('cleanup-audits');
+
+  print(
+    `CLEANUP COMPLETE\n${divider()}\nDeleted ${auditRecords.length} incorrect Balance Adjustment income records.\n\nReal income and transfers were not changed.`,
+    'success'
+  );
+
+  showDashboard();
+}
+
+async function execute(raw, echo = true) {
+  // Handle pending due confirmation first
+  if (pendingDueMatch) {
+    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
+    await handleDueMatch(raw);
+    return;
+  }
+
+  // Handle transaction edit flow
+  if (editDraft) {
+    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
+    await continueEdit(raw);
+    return;
+  }
+
+  // Handle transaction entry flow
+  if (entryDraft) {
+    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
+    await continueEntry(raw);
+    return;
+  }
+
+  // Handle due entry flow
+  if (dueDraft) {
+    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
+    await continueDue(raw);
+    return;
+  }
+
+  // Handle due edit flow
+  if (dueEditDraft) {
+    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
+    await continueDueEdit(raw);
+    return;
+  }
+
+  // Handle wallet manager flow
+  if (walletFlow) {
+    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
+    await continueWalletFlow(raw);
+    return;
+  }
+
+  const command = raw.trim();
+
+  if (!command) return;
+
+  if (echo) {
+    print(`ahmed@finance:~$ ${command}`, 'command');
+  }
+
+  const [rawAction, ...parts] = command.split(/\s+/);
+
+  const aliases = {
+    expense: 'exp',
+    income: 'inc',
+    dashboard: 'dash',
+    filter: 'filter',
+    fav: 'favorite',
+    categories: 'category',
+    wallets: 'wallet'
+  };
+
+  const action =
+    aliases[rawAction.toLowerCase()] ||
+    rawAction.toLowerCase();
+
+  // =========================
+  // FUEL
+  // =========================
+
+  if (
+    action === 'fuel' &&
+    ['stats', 'page'].includes(String(parts[0] || '').toLowerCase())
+  ) {
+    fuelPage();
+  }
+
+  // =========================
+  // TRANSACTIONS
+  // =========================
+
+  else if (['exp', 'inc', 'fuel'].includes(action)) {
+    await startTransaction(action, parts);
+  }
+
+  // =========================
+  // DASHBOARD
+  // =========================
+
+  else if (action === 'dash' || action === 'home') {
+    showDashboard();
+  }
+
+  // =========================
+  // LIST
+  // =========================
+
+  else if (action === 'list') {
+    listTransactions(parts);
+  }
+
+  // =========================
+  // FILTER
+  // =========================
+
+  else if (action === 'filter') {
+    listTransactions(['cat', ...parts]);
+  }
+
+  // =========================
+  // SEARCH
+  // =========================
+
+  else if (action === 'search') {
+    searchTransactions(parts.join(' '));
+  }
+
+  // =========================
+  // EDIT
+  // =========================
+
+  else if (action === 'edit') {
+    const row = parts[0];
+
+    if (!row) {
+      print(
+        'Usage: edit <row>\nExample: edit 1',
+        'error'
+      );
+      return;
+    }
+
+    await startEdit(row);
+  }
+
+  // =========================
+  // DELETE
+  // =========================
+
+  else if (action === 'delete') {
+    const row = parts[0];
+
+    if (!row) {
+      print(
+        'Usage: delete <row>\nExample: delete 1',
+        'error'
+      );
+      return;
+    }
+
+    // Make sure row number is valid
+    const rowNumber = Number(row);
+
+    if (
+      !Number.isInteger(rowNumber) ||
+      rowNumber < 1
+    ) {
+      print(
+        'Error: row number must be a positive integer.\nExample: delete 1',
+        'error'
+      );
+      return;
+    }
+
+    // Make sure a list/search result exists
+    if (!listedTransactions.length) {
+      print(
+        'Error: run list first, then use its row number.\nExample:\nlist inc\ndelete 1',
+        'error'
+      );
+      return;
+    }
+
+    // Make sure requested row exists
+    if (!listedTransactions[rowNumber - 1]) {
+      print(
+        `Error: row ${rowNumber} does not exist in the current list.`,
+        'error'
+      );
+      return;
+    }
+
+    await deleteTransaction(rowNumber);
+  }
+
+  // =========================
+  // CATEGORY
+  // =========================
+
+  else if (action === 'category') {
+    await manageCategory(parts);
+  }
+
+  // =========================
+  // WALLET
+  // =========================
+
+  else if (action === 'wallet') {
+    await manageWallet(parts);
+  }
+
+  // =========================
+  // DUE
+  // =========================
+
+  else if (action === 'due') {
+    await manageDue(parts);
+  }
+
+  // =========================
+  // FAVORITE
+  // =========================
+
+  else if (action === 'favorite') {
+    await manageFavorite(parts);
+  }
+
+  // =========================
+  // MOVE
+  // =========================
+
+  else if (action === 'move') {
+    await moveMoney(parts);
+  }
+
+  // =========================
+  // REPEAT
+  // =========================
+
+  else if (action === 'repeat') {
+    const last = [...transactions]
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt) -
+          new Date(a.createdAt)
+      )[0];
+
+    if (!last) {
+      print(
+        'No transaction to repeat.',
+        'warning'
+      );
+    } else {
+      await saveTransaction(last.type, {
+        ...last,
+        id: undefined,
+        createdAt: undefined,
+        updatedAt: undefined,
+        date: today()
+      });
+    }
+  }
+
+  // =========================
+  // UNDO
+  // =========================
+
+  else if (action === 'undo') {
+    await undo();
+  }
+
+  // =========================
+  // SETTINGS
+  // =========================
+
+  else if (action === 'settings') {
+    await changeSettings(parts);
+  }
+
+  // =========================
+  // THEME
+  // =========================
+
+  else if (action === 'theme') {
+    await setTheme(parts[0]);
+  }
+
+  // =========================
+  // REPORT
+  // =========================
+
+  else if (action === 'report') {
+    report();
+  }
+
+  // =========================
+  // BACKUP
+  // =========================
+
+  else if (action === 'backup') {
+    await downloadBackup();
+  }
+
+  // =========================
+  // HELP
+  // =========================
+
+  else if (action === 'help') {
+    showHelp();
+  }
+
+  // =========================
+  // CLEAR
+  // =========================
+
+  else if (action === 'clear') {
+    output.replaceChildren();
+
+    // Clear current transaction list too
+    listedTransactions = [];
+  }
+
+  // =========================
+  // UNKNOWN COMMAND
+  // =========================
+
+  else {
+    print(
+      `Error: command not found: ${action}\nType help to see available commands.`,
+      'error'
+    );
+  }
+
+  scrollToLatest();
+}
 
 $('#commandForm').addEventListener('submit', async event => { event.preventDefault(); const value = input.value; input.value = ''; if (!cloudUnlocked && location.protocol !== 'file:') { await unlock(value); return; } if (value.trim()) { history.push(value); historyIndex = history.length; } try { await execute(value); } catch (error) { print(`Error: ${error.message || 'operation failed.'}`, 'error'); } input.focus(); scrollToLatest(); });
 input.addEventListener('keydown', event => { if (event.key === 'ArrowUp' && history.length) { event.preventDefault(); historyIndex = Math.max(0, historyIndex - 1); input.value = history[historyIndex]; } if (event.key === 'ArrowDown' && history.length) { event.preventDefault(); historyIndex = Math.min(history.length, historyIndex + 1); input.value = historyIndex === history.length ? '' : history[historyIndex]; } });
