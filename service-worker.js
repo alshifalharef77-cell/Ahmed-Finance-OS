@@ -1,4 +1,4 @@
-const CACHE = 'finance-os-alpha-3-0';
+const CACHE = 'finance-os-alpha-3-1';
 const ASSETS = ['./', './index.html', './css/app.css', './js/app.js', './js/db.js', './manifest.json', './assets/icon.svg'];
 
 self.addEventListener('install', event => {
