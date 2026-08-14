@@ -1,4 +1,4 @@
-const CACHE = 'finance-os-alpha-03-cloud';
+const CACHE = 'finance-os-alpha-3-0';
 const ASSETS = ['./', './index.html', './css/app.css', './js/app.js', './js/db.js', './manifest.json', './assets/icon.svg'];
 
 self.addEventListener('install', event => {
@@ -17,15 +17,15 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
+  if (new URL(event.request.url).pathname.startsWith('/api/')) return;
+
   if (event.request.mode === 'navigate') {
     event.respondWith(fetch(event.request).catch(() => caches.match('./index.html')));
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
-      if (response.ok) caches.open(CACHE).then(cache => cache.put(event.request, response.clone()));
-      return response;
-    }).catch(() => cached))
-  );
+  event.respondWith(fetch(event.request).then(response => {
+    if (response.ok && new URL(event.request.url).origin === self.location.origin) caches.open(CACHE).then(cache => cache.put(event.request, response.clone()));
+    return response;
+  }).catch(() => caches.match(event.request)));
 });
