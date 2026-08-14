@@ -245,6 +245,7 @@ async function unlock(pin) {
   } catch { showLock('Unable to reach the cloud. Check the deployed Vercel site.'); }
 }
 
+
 function parseQuick(type, parts) {
   const amount = Number(parts[0]); if (!validAmount(amount)) return { error: 'Error: amount must be a positive number.' };
   if (type === 'fuel') { const odometer = Number(parts[1]), fillType = String(parts[2] || '').toLowerCase(); if (!Number.isFinite(odometer) || odometer < 0) return { error: 'Error: odometer must be a non-negative number.' }; if (!['full', 'partial'].includes(fillType)) return { error: 'Error: fill type must be full or partial.' }; const selected = walletByCode(parts[3]) ? parts[3] : preferences.lastWallet; const noteStart = walletByCode(parts[3]) ? 4 : 3; return { amount, odometer, fillType, walletCode: selected, description: parts.slice(noteStart).join(' '), liters: amount / Number(preferences.fuelPrice), fuelPrice: Number(preferences.fuelPrice) }; }
