@@ -43,18 +43,30 @@ function applyTheme() { const accent = themes[preferences.theme] || themes.green
 
 async function seedCollections() {
   const existingWallets = await all('wallets');
+
   if (!existingWallets.length) {
-  for (const wallet of baseWallets) {
-    await upsert('wallets', {
-      id: `wallet_${wallet.code}`,
-      ...wallet,
-      hidden: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      deleted: false
-    });
+    for (const wallet of baseWallets) {
+      await upsert('wallets', {
+        id: `wallet_${wallet.code}`,
+        ...wallet,
+        hidden: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        deleted: false
+      });
+    }
   }
-}
+
+  const walletRecords = await all('wallets');
+
+  for (const wallet of walletRecords) {
+    if (!Object.prototype.hasOwnProperty.call(wallet, 'actualBalance')) {
+      await update('wallets', wallet.id, {
+        actualBalance: null
+      });
+    }
+  }
+
   const existingCategories = await all('categories');
   const legacy = (await Promise.all(stores.map(all))).flat().map(row => row.category).filter(Boolean);
   for (const name of [...new Set(legacy)]) if (!existingCategories.some(item => item.name.toLowerCase() === name.toLowerCase())) await add('categories', { name });
@@ -106,14 +118,56 @@ function calculateWalletBalances() {
   return balances;
 }
 
+function getWalletBalanceInfo(wallet, balances = calculateWalletBalances()) {
+  const data = balances.get(wallet.code);
+  const calculated = Number(data?.calculated) || 0;
+
+  const hasActualBalance =
+    wallet.actualBalance !== null &&
+    wallet.actualBalance !== undefined &&
+    Number.isFinite(Number(wallet.actualBalance));
+
+  if (!hasActualBalance) {
+    return {
+      wallet,
+      calculated,
+      actual: null,
+      difference: null,
+      status: 'NOT AUDITED'
+    };
+  }
+
+  const actual = Number(wallet.actualBalance);
+  const difference = actual - calculated;
+
+  return {
+    wallet,
+    calculated,
+    actual,
+    difference,
+    status: Math.abs(difference) < 0.005
+      ? 'SYNCED'
+      : 'NEEDS RECONCILIATION'
+  };
+}
+
 function walletTable() {
   const balances = calculateWalletBalances();
 
   const rows = activeWallets().map(wallet => {
-    const data = balances.get(wallet.code);
-    const calculated = data?.calculated || 0;
+    const info = getWalletBalanceInfo(wallet, balances);
 
-    return `${pad(wallet.name, 14)} ${money(calculated)}`;
+    const balance = info.actual !== null
+      ? info.actual
+      : info.calculated;
+
+    const status = info.status === 'SYNCED'
+      ? ' ✔'
+      : info.status === 'NEEDS RECONCILIATION'
+        ? ' ⚠'
+        : '';
+
+    return `${pad(wallet.name, 14)} ${money(balance)}${status}`;
   });
 
   return [
