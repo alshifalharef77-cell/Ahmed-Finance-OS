@@ -78,6 +78,21 @@ export async function upsert(store, record) {
   });
 }
 
+// Cloud data is authoritative when the app unlocks. Replacing a store prevents
+// stale browser records from being uploaded again after they were removed remotely.
+export async function replaceAll(store, records) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const objectStore = tx.objectStore(store);
+    objectStore.clear();
+    for (const record of records) objectStore.put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('Store replacement failed'));
+  });
+}
+
 export const softDelete = (store, id) => update(store, id, { deleted: true });
 
 // Runs related writes in one IndexedDB transaction. Each item is { store, type, record }.

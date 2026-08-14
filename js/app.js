@@ -1,4 +1,4 @@
-import { add, all, batchWrite, exportData, softDelete, stores as databaseStores, update, upsert } from './db.js';
+import { add, all, batchWrite, exportData, softDelete, stores as databaseStores, replaceAll, update, upsert } from './db.js';
 
 const $ = selector => document.querySelector(selector);
 const output = $('#terminalOutput');
@@ -187,7 +187,19 @@ function walletPosition() {
   return `MONEY POSITION\n${divider()}\nVerified actual : ${money(verified)}\nUnverified calc : ${money(unverified)}\nNeeds reconcile : ${needs}\n\n${infos.map(info => `${pad(info.wallet.name, 14)} Actual: ${pad(info.actual === null ? 'Not audited' : money(info.actual), 16)} Calc: ${pad(money(info.calculated), 16)} ${info.difference === null ? 'NOT AUDITED' : `${money(info.difference)} ${info.status}`}`).join('\n')}`;
 }
 function dueSummary() { const open = dues.filter(due => !due.paid).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3); if (!open.length) return 'DUE\n' + divider() + '\nNo upcoming dues.'; return `DUE\n${divider()}\n${open.map(due => { const days = isoDays(due.dueDate); return `${pad(due.title, 22)} ${due.amount ? pad(money(due.amount), 14) : pad('-', 14)} ${days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'due today' : `${days} days remaining`}`; }).join('\n')}`; }
-function transactionTable(rows, numbered = false) { if (!rows.length) return 'No transactions found.'; const header = `${numbered ? '#   ' : ''}DATE         TYPE      AMOUNT          WALLET         CATEGORY / ODOMETER       DESCRIPTION`; const lines = rows.map((row, index) => { const detail = row.type === 'fuel' ? `${row.odometer || '-'} km` : row.category; return `${numbered ? `${pad(index + 1, 3)} ` : ''}${pad(dateText(row.date), 12)} ${pad(typeLabels[row.type], 9)} ${pad(money(row.amount), 15)} ${pad(walletName(row.walletCode), 14)} ${pad(detail, 23)} ${String(row.description || '-').slice(0, 24)}`; }); return [header, divider(), ...lines].join('\n'); }
+function transactionOrder(a, b) { return new Date(`${a.date}T00:00:00`) - new Date(`${b.date}T00:00:00`) || new Date(a.createdAt || 0) - new Date(b.createdAt || 0) || String(a.id).localeCompare(String(b.id)); }
+function balancesAfterTransactions() {
+  const balances = new Map();
+  for (const row of [...transactions].sort(transactionOrder)) {
+    const amount = Number(row.amount) || 0;
+    const current = balances.get(row.walletCode) || 0;
+    const after = row.type === 'inc' ? current + amount : current - amount;
+    balances.set(row.walletCode, after);
+    balances.set(row.id, after);
+  }
+  return balances;
+}
+function transactionTable(rows, numbered = false) { if (!rows.length) return 'No transactions found.'; const after = balancesAfterTransactions(); const header = `${numbered ? '#   ' : ''}DATE         TYPE      AMOUNT          WALLET         CATEGORY / ODOMETER       DESCRIPTION               BALANCE AFTER`; const lines = rows.map((row, index) => { const detail = row.type === 'fuel' ? `${row.odometer || '-'} km` : row.category; return `${numbered ? `${pad(index + 1, 3)} ` : ''}${pad(dateText(row.date), 12)} ${pad(typeLabels[row.type], 9)} ${pad(money(row.amount), 15)} ${pad(walletName(row.walletCode), 14)} ${pad(detail, 23)} ${pad(String(row.description || '-').slice(0, 24), 25)} ${money(after.get(row.id))}`; }); return [header, '-'.repeat(header.length), ...lines].join('\n'); }
 
 function showDashboard() {
   const parts = [`Welcome back, Ahmed.\n\nAhmed Finance OS — Alpha 3.0\n${new Intl.DateTimeFormat('en-GB', { dateStyle: 'full' }).format(new Date())}\nYour finance terminal is ready.`, '', walletPosition(), ''];
@@ -199,66 +211,13 @@ function showDashboard() {
   print(parts.join('\n'), 'success');
 }
 
-function showHelp() {
-  print(
-    `AHMED FINANCE OS — ALPHA 3.0 COMMANDS
-${divider()}
+function showHelp() { print(`ALPHA 3.0 COMMANDS\n${divider()}\ndash | home                         dashboard\nexp | inc | fuel                    add a transaction\nlist [all|exp|inc|fuel]             list transactions\nfilter <category> | search <text>   find transactions\nedit <row> | delete <row>           change a listed transaction\nmove <amount> <from> <to>           transfer between wallets\nwallet balance <code> <actual>       audit; type FIX to create Balance Fix\ncategory | wallet                   manage categories and wallets\nfuel stats                           fuel performance\ndue add | due list | due done <row> manage dues\nfavorite | fav                      saved transaction templates\nrepeat | undo                       repeat or undo last change\nsettings | theme                    preferences\nreport | backup | clear | help       reports and utilities\n\nQUICK MODE\nexp <amount> <category> [wallet] [note]\ninc <amount> <category> [wallet] [note]\nfuel <cost> <odometer> <full|partial> [wallet] [note]\n\nWallet codes: ${activeWallets().map(wallet => `${wallet.code.toUpperCase()} ${wallet.name}`).join(' | ')}`, 'muted'); }
 
-DASHBOARD
-dash | home                         show dashboard
-help                                show this help
-clear                               clear terminal
-
-TRANSACTIONS
-exp | inc | fuel                    guided transaction entry
-exp <amount> <category> [wallet] [note]
-inc <amount> <category> [wallet] [note]
-fuel <cost> <odometer> <full|partial> [wallet] [note]
-list [all|exp|inc|fuel]             list transactions
-filter <category> | search <text>   find transactions
-edit <row> | delete <row>           edit or delete a listed transaction
-repeat | undo                       repeat or undo recent actions
-
-WALLETS — ALPHA 3.0
-wallets                             open Wallet Manager
-wallet list                         view Calculated / Actual / Difference
-wallet balance <code> <amount>      reconcile one wallet
-wallet audit                        audit all active wallets
-wallet add <code> <name>            add wallet
-wallet rename <code> <name>         rename wallet
-wallet hide <code>                  hide wallet
-wallet restore <code>               restore hidden wallet
-move <amount> <from> <to>           transfer between wallets
-
-FUEL CENTER
-fuel page                           full fuel history and performance report
-fuel stats                          fuel center shortcut
-fuel <cost> <odometer> <full|partial> [wallet] [note]
-
-OTHER
-category                            manage categories
-due add | due list | due done <row> manage dues
-favorite | fav                      saved transaction templates
-settings | theme                    preferences
-report | backup                     reports and backup
-
-Wallet codes:
-${activeWallets()
-  .map(wallet => `${wallet.code.toUpperCase()} ${wallet.name}`)
-  .join(' | ')}`,
-    'muted'
-  );
-}
-
-async function mergeCloudData(remote) {
-  for (const store of databaseStores) {
-    const local = await all(store, true);
-    const localById = new Map(local.map(record => [record.id, record]));
-    for (const record of remote.data?.[store] || []) {
-      const current = localById.get(record.id);
-      if (!current || new Date(record.updatedAt || 0) > new Date(current.updatedAt || 0)) await upsert(store, record);
-    }
-  }
+async function loadCloudData(remote) {
+  const hasCloudRecords = Object.values(remote.data || {}).some(records => records.length);
+  if (!hasCloudRecords) return false;
+  for (const store of databaseStores) await replaceAll(store, remote.data?.[store] || []);
+  return true;
 }
 async function sync(reason = 'change') {
   if (!cloudUnlocked) return;
@@ -280,7 +239,8 @@ async function unlock(pin) {
     const payload = await response.json();
     if (!response.ok) { showLock(payload.error || 'PIN was not accepted.'); return; }
     cloudPin = pin; cloudUnlocked = true; sessionStorage.setItem('finance-pin', pin);
-    await mergeCloudData(payload); await loadData(); await sync('unlock');
+    const cloudLoaded = await loadCloudData(payload); await loadData();
+    if (!cloudLoaded) await sync('bootstrap');
     input.type = 'text'; input.autocomplete = 'off'; input.placeholder = 'type help to see commands'; status.textContent = 'CLOUD / SYNCED'; output.replaceChildren(); showDashboard();
   } catch { showLock('Unable to reach the cloud. Check the deployed Vercel site.'); }
 }
@@ -326,9 +286,63 @@ function searchTransactions(text) { const query = text.toLowerCase(); const rows
 async function manageCategory(parts) { const action = (parts.shift() || 'list').toLowerCase(); if (action === 'list') { print(`CATEGORIES\n${divider()}\n${categories.map(item => `${pad(item.name, 24)} ${item.hidden ? 'HIDDEN' : 'ACTIVE'}`).join('\n') || 'No categories.'}`, 'muted'); return; } if (action === 'add') { const name = parts.join(' '); if (!name || categoryExists(name)) { print('Error: provide a new category name.', 'error'); return; } await add('categories', { name }); await changed('category'); print(`Category added: ${name}`, 'success'); return; } const target = categories.find(item => item.name.toLowerCase() === String(parts[0] || '').toLowerCase()); if (!target) { print('Error: category not found.', 'error'); return; } if (action === 'rename') { const name = parts.slice(1).join(' '); if (!name || categoryExists(name)) { print('Usage: category rename <old> <new unique name>', 'error'); return; } for (const row of transactions.filter(item => String(item.category).toLowerCase() === target.name.toLowerCase())) await update(storeFor[row.type], row.id, { category: name }); await update('categories', target.id, { name }); } else if (action === 'hide') await update('categories', target.id, { hidden: true }); else { print('Use: category [list|add|rename|hide]', 'error'); return; } await changed('category'); print('Category updated.', 'success'); }
 function walletList() { const balances = calculateWalletBalances(); return activeWallets().map(wallet => { const info = getWalletBalanceInfo(wallet, balances); return `${pad(wallet.code.toUpperCase(), 4)} ${pad(wallet.name, 16)} Calculated: ${pad(money(info.calculated), 15)} Actual: ${pad(info.actual === null ? '-' : money(info.actual), 15)} ${info.status}`; }).join('\n') || 'No active wallets.'; }
 function showWalletManager() { print(`WALLET MANAGER\n${divider()}\n${walletPosition()}\n\n1. View wallets\n2. Edit wallet balance\n3. Wallet audit\n4. Transfer\n5. Add wallet\n6. Rename wallet\n7. Hide wallet\n8. Restore wallet\n0. Back`, 'muted'); walletFlow = { kind: 'manager' }; input.placeholder = 'Choose 0-8'; }
-async function applyReconciliation(wallet, actual) { const info = getWalletBalanceInfo(wallet); const difference = actual - info.calculated; const writes = [{ store: 'wallets', type: 'put', record: { ...wallet, actualBalance: actual } }], adjustment = { amount: Math.abs(difference), category: 'Balance Adjustment', walletCode: wallet.code, description: 'Manual Wallet Reconciliation', date: today(), reconciliation: true }, store = difference > 0 ? 'income' : 'expenses'; if (Math.abs(difference) >= 0.005) writes.push({ store, type: 'add', record: adjustment }); await batchWrite(writes); await changed('wallet-reconciliation'); await rememberUndo({ kind: 'reconciliation', walletId: wallet.id, previousActual: wallet.actualBalance, store, adjustmentId: adjustment.id }); print(`Wallet reconciled: ${wallet.name}\nActual: ${money(actual)}\nDifference applied: ${money(difference)}`, 'success'); showDashboard(); }
-async function continueWalletFlow(raw) { const answer = raw.trim(); if (answer.toLowerCase() === 'cancel' || answer === '0') { walletFlow = null; input.placeholder = 'type help to see commands'; print('Wallet action cancelled.', 'warning'); return; } const flow = walletFlow; if (flow.kind === 'confirm-balance') { walletFlow = null; if (!['y', 'yes', '1'].includes(answer.toLowerCase())) return print('Balance was not changed.', 'warning'); return applyReconciliation(flow.wallet, flow.actual); } if (flow.kind === 'audit') { const wallet = flow.wallets[flow.index]; if (!Number.isFinite(Number(answer)) || Number(answer) < 0) return print('Enter a valid actual balance, or cancel.', 'error'); flow.entries.push({ wallet, actual: Number(answer) }); flow.index += 1; if (flow.index < flow.wallets.length) { const next = flow.wallets[flow.index]; print(`${next.name} calculated: ${money(getWalletBalanceInfo(next).calculated)}\nEnter actual balance:`, 'muted'); return; } walletFlow = { kind: 'confirm-audit', entries: flow.entries }; print(`AUDIT SUMMARY\n${divider()}\n${flow.entries.map(entry => `${entry.wallet.name}: ${money(entry.actual - getWalletBalanceInfo(entry.wallet).calculated)}`).join('\n')}\nApply all? [Y/n]`, 'warning'); return; } if (flow.kind === 'confirm-audit') { walletFlow = null; if (!['y', 'yes', '1'].includes(answer.toLowerCase())) return print('Audit was not applied.', 'warning'); for (const entry of flow.entries) await applyReconciliation(entry.wallet, entry.actual); return; } if (flow.kind === 'manager') { walletFlow = null; if (answer === '1') return manageWallet(['list']); if (answer === '2') return print('Use: wallet balance <code> <amount>', 'muted'); if (answer === '3') return manageWallet(['audit']); if (answer === '4') return print('Use: move <amount> <from> <to>', 'muted'); if (answer === '5') return print('Use: wallet add <code> <name>', 'muted'); if (answer === '6') return print('Use: wallet rename <code> <name>', 'muted'); if (answer === '7') return print('Use: wallet hide <code>', 'muted'); if (answer === '8') return print('Use: wallet restore <code>', 'muted'); return; } }
-async function manageWallet(parts) { const action = (parts.shift() || 'list').toLowerCase(); if (action === 'list') return print(`WALLETS\n${divider()}\n${walletList()}`, 'muted'); if (action === 'balance') { const wallet = walletByCode(parts[0]), actual = Number(parts[1]); if (!wallet || !Number.isFinite(actual) || actual < 0) return print('Usage: wallet balance <code> <actual amount>', 'error'); const info = getWalletBalanceInfo(wallet); walletFlow = { kind: 'confirm-balance', wallet, actual }; return print(`${wallet.name}\nCalculated: ${money(info.calculated)}\nActual: ${money(actual)}\nDifference: ${money(actual - info.calculated)}\nApply reconciliation? [Y/n]`, 'warning'); } if (action === 'audit') { const active = activeWallets(); if (!active.length) return print('No active wallets.', 'warning'); walletFlow = { kind: 'audit', wallets: active, index: 0, entries: [] }; const first = active[0]; return print(`WALLET AUDIT\n${divider()}\n${first.name} calculated: ${money(getWalletBalanceInfo(first).calculated)}\nEnter actual balance:`, 'muted'); } if (action === 'add') { const [code, ...names] = parts, name = names.join(' '); if (!/^[a-z0-9]$/i.test(code || '') || !name || anyWalletByCode(code)) return print('Usage: wallet add <one-letter-code> <name>', 'error'); await add('wallets', { code: code.toLowerCase(), name, actualBalance: null, hidden: false }); await changed('wallet'); return print(`Wallet added: ${name}`, 'success'); } const target = anyWalletByCode(parts[0]); if (!target) return print('Error: wallet code not found.', 'error'); if (action === 'rename') { const name = parts.slice(1).join(' '); if (!name) return print('Usage: wallet rename <code> <new name>', 'error'); await update('wallets', target.id, { name }); } else if (action === 'hide') { if (activeWallets().length < 2) return print('Cannot hide the last active wallet.', 'error'); await update('wallets', target.id, { hidden: true }); } else if (action === 'restore') await update('wallets', target.id, { hidden: false }); else return print('Use: wallet [list|balance|audit|add|rename|hide|restore]', 'error'); await changed('wallet'); print('Wallet updated.', 'success'); }
+async function saveAudit(wallet, actual, createFix = false) {
+  const info = getWalletBalanceInfo(wallet);
+  const difference = actual - info.calculated;
+  const writes = [{ store: 'wallets', type: 'put', record: { ...wallet, actualBalance: actual } }];
+  let adjustmentId = null;
+  let store = null;
+
+  if (createFix && Math.abs(difference) >= 0.005) {
+    store = difference > 0 ? 'income' : 'expenses';
+    const adjustment = {
+      amount: Math.abs(difference),
+      category: 'Balance Fix',
+      walletCode: wallet.code,
+      description: `${wallet.name}: ${money(info.calculated)} → ${money(actual)}`,
+      date: today(),
+      balanceFix: true
+    };
+    writes.push({ store, type: 'add', record: adjustment });
+    adjustmentId = adjustment;
+  }
+
+  await batchWrite(writes);
+  await changed(createFix ? 'balance-fix' : 'wallet-audit');
+  await rememberUndo({ kind: 'reconciliation', walletId: wallet.id, previousActual: wallet.actualBalance, store, adjustmentId: adjustmentId?.id || null });
+  print(createFix ? `Balance Fix saved: ${wallet.name} ${money(difference)}.` : `Audit saved: ${wallet.name} actual balance is ${money(actual)}.`, 'success');
+  showDashboard();
+}
+async function continueWalletFlow(raw) {
+  const answer = raw.trim();
+  if (answer.toLowerCase() === 'cancel' || answer === '0') { walletFlow = null; input.placeholder = 'type help to see commands'; print('Wallet action cancelled.', 'warning'); return; }
+  const flow = walletFlow;
+  if (flow.kind === 'confirm-balance') {
+    walletFlow = null;
+    const mode = answer.toLowerCase();
+    if (['y', 'yes', '1'].includes(mode)) return saveAudit(flow.wallet, flow.actual);
+    if (mode === 'fix') return saveAudit(flow.wallet, flow.actual, true);
+    return print('Balance was not changed.', 'warning');
+  }
+  if (flow.kind === 'audit') {
+    const wallet = flow.wallets[flow.index];
+    if (!Number.isFinite(Number(answer)) || Number(answer) < 0) return print('Enter a valid actual balance, or cancel.', 'error');
+    flow.entries.push({ wallet, actual: Number(answer) });
+    flow.index += 1;
+    if (flow.index < flow.wallets.length) { const next = flow.wallets[flow.index]; print(`${next.name} calculated: ${money(getWalletBalanceInfo(next).calculated)}\nEnter actual balance:`, 'muted'); return; }
+    walletFlow = { kind: 'confirm-audit', entries: flow.entries };
+    print(`AUDIT SUMMARY\n${divider()}\n${flow.entries.map(entry => `${entry.wallet.name}: ${money(entry.actual - getWalletBalanceInfo(entry.wallet).calculated)}`).join('\n')}\nSave audit only? [Y/n]`, 'warning');
+    return;
+  }
+  if (flow.kind === 'confirm-audit') {
+    walletFlow = null;
+    if (!['y', 'yes', '1'].includes(answer.toLowerCase())) return print('Audit was not applied.', 'warning');
+    for (const entry of flow.entries) await saveAudit(entry.wallet, entry.actual);
+    return;
+  }
+  if (flow.kind === 'manager') { walletFlow = null; if (answer === '1') return manageWallet(['list']); if (answer === '2') return print('Use: wallet balance <code> <amount>', 'muted'); if (answer === '3') return manageWallet(['audit']); if (answer === '4') return print('Use: move <amount> <from> <to>', 'muted'); if (answer === '5') return print('Use: wallet add <code> <name>', 'muted'); if (answer === '6') return print('Use: wallet rename <code> <name>', 'muted'); if (answer === '7') return print('Use: wallet hide <code>', 'muted'); if (answer === '8') return print('Use: wallet restore <code>', 'muted'); }
+}
+async function manageWallet(parts) { const action = (parts.shift() || 'list').toLowerCase(); if (action === 'list') return print(`WALLETS\n${divider()}\n${walletList()}`, 'muted'); if (action === 'balance') { const wallet = walletByCode(parts[0]), actual = Number(parts[1]); if (!wallet || !Number.isFinite(actual) || actual < 0) return print('Usage: wallet balance <code> <actual amount>', 'error'); const info = getWalletBalanceInfo(wallet); walletFlow = { kind: 'confirm-balance', wallet, actual }; return print(`${wallet.name}\nCalculated: ${money(info.calculated)}\nActual: ${money(actual)}\nDifference: ${money(actual - info.calculated)}\nY = save audit only · FIX = create one Balance Fix · N = cancel`, 'warning'); } if (action === 'audit') { const active = activeWallets(); if (!active.length) return print('No active wallets.', 'warning'); walletFlow = { kind: 'audit', wallets: active, index: 0, entries: [] }; const first = active[0]; return print(`WALLET AUDIT\n${divider()}\n${first.name} calculated: ${money(getWalletBalanceInfo(first).calculated)}\nEnter actual balance:`, 'muted'); } if (action === 'add') { const [code, ...names] = parts, name = names.join(' '); if (!/^[a-z0-9]$/i.test(code || '') || !name || anyWalletByCode(code)) return print('Usage: wallet add <one-letter-code> <name>', 'error'); await add('wallets', { code: code.toLowerCase(), name, actualBalance: null, hidden: false }); await changed('wallet'); return print(`Wallet added: ${name}`, 'success'); } const target = anyWalletByCode(parts[0]); if (!target) return print('Error: wallet code not found.', 'error'); if (action === 'rename') { const name = parts.slice(1).join(' '); if (!name) return print('Usage: wallet rename <code> <new name>', 'error'); await update('wallets', target.id, { name }); } else if (action === 'hide') { if (activeWallets().length < 2) return print('Cannot hide the last active wallet.', 'error'); await update('wallets', target.id, { hidden: true }); } else if (action === 'restore') await update('wallets', target.id, { hidden: false }); else return print('Use: wallet [list|balance|audit|add|rename|hide|restore]', 'error'); await changed('wallet'); print('Wallet updated.', 'success'); }
 
 function fuelStats() { const rows = [...transactions].filter(row => row.type === 'fuel').sort((a, b) => a.date.localeCompare(b.date)); if (!rows.length) { print('No fuel records yet.', 'muted'); return; } const fullRows = rows.filter(row => row.fillType === 'full'); const last = rows.at(-1), previousFull = fullRows.slice(0, -1).at(-1); const distance = previousFull && last.fillType === 'full' ? Number(last.odometer) - Number(previousFull.odometer) : null; const kmPerLiter = distance && last.liters ? distance / Number(last.liters) : null; const lPer100 = kmPerLiter ? 100 / kmPerLiter : null; print(`FUEL STATS\n${divider()}\nLast fill       : ${dateText(last.date)}\nCost            : ${money(last.amount)}\nLiters          : ${Number(last.liters || 0).toFixed(2)} L\nOdometer        : ${last.odometer} km\nFuel price      : ${money(last.fuelPrice || preferences.fuelPrice)} / L\n${distance !== null ? `Distance        : ${distance} km\nEfficiency      : ${kmPerLiter.toFixed(2)} km/L\nConsumption     : ${lPer100.toFixed(2)} L/100km\nCost per km     : ${money(last.amount / distance)} / km` : 'Fill the tank fully twice to calculate consumption.'}\n\nMonthly fuel    : ${money(periodTotals('month').fuel)}`, 'fuel'); }
 
@@ -355,416 +369,18 @@ async function downloadBackup() { const data = await exportData(); const url = U
 function report() { const monthRows = transactions.filter(row => inPeriod(row.date, 'month') && row.type === 'exp'); const groups = Object.entries(monthRows.reduce((map, row) => ({ ...map, [row.category]: (map[row.category] || 0) + Number(row.amount) }), {})).sort((a, b) => b[1] - a[1]).slice(0, 5); print(`MONTHLY REPORT\n${divider()}\nTop spending categories\n${groups.map(([name, amount]) => `${pad(name, 24)} ${money(amount)}`).join('\n') || 'No expenses this month.'}\n\nFuel total: ${money(periodTotals('month').fuel)}`, 'muted'); }
 
 async function handleDueMatch(raw) { const answer = raw.trim().toLowerCase(); if (['y', 'yes', ''].includes(answer)) { const due = pendingDueMatch.due; if (due.repeat && due.repeat !== 'none') await update('dues', due.id, { dueDate: nextDueDate(due.dueDate, due.repeat), paid: false }); else await update('dues', due.id, { paid: true, paidAt: new Date().toISOString() }); await changed('due-match'); print(`Marked Due as paid: ${due.title}`, 'success'); } else print('Expense kept as a normal transaction; Due remains open.', 'muted'); pendingDueMatch = null; input.placeholder = 'type help to see commands'; }
-async function cleanupAuditAdjustments() {
-  const auditRecords = transactions.filter(row =>
-    row.type === 'inc' &&
-    row.reconciliation === true &&
-    row.category === 'Balance Adjustment' &&
-    row.description === 'Manual Wallet Reconciliation'
-  );
-
-  if (!auditRecords.length) {
-    print('No Balance Adjustment income records found.', 'warning');
-    return;
-  }
-
-  for (const record of auditRecords) {
-    await softDelete('income', record.id);
-  }
-
-  listedTransactions = [];
-  await changed('cleanup-audits');
-
-  print(
-    `CLEANUP COMPLETE\n${divider()}\nDeleted ${auditRecords.length} incorrect Balance Adjustment income records.\n\nReal income and transfers were not changed.`,
-    'success'
-  );
-
-  showDashboard();
-}
-
-async function execute(raw, echo = true) {
-  // Handle pending due confirmation first
-  if (pendingDueMatch) {
-    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
-    await handleDueMatch(raw);
-    return;
-  }
-
-  // Handle transaction edit flow
-  if (editDraft) {
-    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
-    await continueEdit(raw);
-    return;
-  }
-
-  // Handle transaction entry flow
-  if (entryDraft) {
-    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
-    await continueEntry(raw);
-    return;
-  }
-
-  // Handle due entry flow
-  if (dueDraft) {
-    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
-    await continueDue(raw);
-    return;
-  }
-
-  // Handle due edit flow
-  if (dueEditDraft) {
-    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
-    await continueDueEdit(raw);
-    return;
-  }
-
-  // Handle wallet manager flow
-  if (walletFlow) {
-    if (echo) print(`ahmed@finance:~$ ${raw}`, 'command');
-    await continueWalletFlow(raw);
-    return;
-  }
-
-  const command = raw.trim();
-
-  if (!command) return;
-
-  if (echo) {
-    print(`ahmed@finance:~$ ${command}`, 'command');
-  }
-
-  const [rawAction, ...parts] = command.split(/\s+/);
-
-  const aliases = {
-    expense: 'exp',
-    income: 'inc',
-    dashboard: 'dash',
-    filter: 'filter',
-    fav: 'favorite',
-    categories: 'category',
-    wallets: 'wallet'
-  };
-
-  const action =
-    aliases[rawAction.toLowerCase()] ||
-    rawAction.toLowerCase();
-
-  // =========================
-  // FUEL
-  // =========================
-
-  if (
-    action === 'fuel' &&
-    ['stats', 'page'].includes(String(parts[0] || '').toLowerCase())
-  ) {
-    fuelPage();
-  }
-
-  // =========================
-  // TRANSACTIONS
-  // =========================
-
-  else if (['exp', 'inc', 'fuel'].includes(action)) {
-    await startTransaction(action, parts);
-  }
-
-  // =========================
-  // DASHBOARD
-  // =========================
-
-  else if (action === 'dash' || action === 'home') {
-    showDashboard();
-  }
-
-  // =========================
-  // LIST
-  // =========================
-
-  else if (action === 'list') {
-    listTransactions(parts);
-  }
-
-  // =========================
-  // FILTER
-  // =========================
-
-  else if (action === 'filter') {
-    listTransactions(['cat', ...parts]);
-  }
-
-  // =========================
-  // SEARCH
-  // =========================
-
-  else if (action === 'search') {
-    searchTransactions(parts.join(' '));
-  }
-
-  // =========================
-  // EDIT
-  // =========================
-
-  else if (action === 'edit') {
-    const row = parts[0];
-
-    if (!row) {
-      print(
-        'Usage: edit <row>\nExample: edit 1',
-        'error'
-      );
-      return;
-    }
-
-    await startEdit(row);
-  }
-
-  // =========================
-  // DELETE
-  // =========================
-
-  else if (action === 'delete') {
-    const row = parts[0];
-
-    if (!row) {
-      print(
-        'Usage: delete <row>\nExample: delete 1',
-        'error'
-      );
-      return;
-    }
-
-    // Make sure row number is valid
-    const rowNumber = Number(row);
-
-    if (
-      !Number.isInteger(rowNumber) ||
-      rowNumber < 1
-    ) {
-      print(
-        'Error: row number must be a positive integer.\nExample: delete 1',
-        'error'
-      );
-      return;
-    }
-
-    // Make sure a list/search result exists
-    if (!listedTransactions.length) {
-      print(
-        'Error: run list first, then use its row number.\nExample:\nlist inc\ndelete 1',
-        'error'
-      );
-      return;
-    }
-
-    // Make sure requested row exists
-    if (!listedTransactions[rowNumber - 1]) {
-      print(
-        `Error: row ${rowNumber} does not exist in the current list.`,
-        'error'
-      );
-      return;
-    }
-
-    await deleteTransaction(rowNumber);
-  }
-
-  // =========================
-  // CATEGORY
-  // =========================
-
-  else if (action === 'category') {
-    await manageCategory(parts);
-  }
-
-  // =========================
-  // WALLET
-  // =========================
-
-  else if (action === 'wallet') {
-    await manageWallet(parts);
-  }
-
-  // =========================
-  // DUE
-  // =========================
-
-  else if (action === 'due') {
-    await manageDue(parts);
-  }
-
-  // =========================
-  // FAVORITE
-  // =========================
-
-  else if (action === 'favorite') {
-    await manageFavorite(parts);
-  }
-
-  // =========================
-  // MOVE
-  // =========================
-
-  else if (action === 'move') {
-    await moveMoney(parts);
-  }
-
-  // =========================
-  // REPEAT
-  // =========================
-
-  else if (action === 'repeat') {
-    const last = [...transactions]
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt) -
-          new Date(a.createdAt)
-      )[0];
-
-    if (!last) {
-      print(
-        'No transaction to repeat.',
-        'warning'
-      );
-    } else {
-      await saveTransaction(last.type, {
-        ...last,
-        id: undefined,
-        createdAt: undefined,
-        updatedAt: undefined,
-        date: today()
-      });
-    }
-  }
-
-  // =========================
-  // UNDO
-  // =========================
-
-  else if (action === 'undo') {
-    await undo();
-  }
-
-  // =========================
-  // SETTINGS
-  // =========================
-
-  else if (action === 'settings') {
-    await changeSettings(parts);
-  }
-
-  // =========================
-  // THEME
-  // =========================
-
-  else if (action === 'theme') {
-    await setTheme(parts[0]);
-  }
-
-  // =========================
-  // REPORT
-  // =========================
-
-  else if (action === 'report') {
-    report();
-  }
-
-  // =========================
-  // BACKUP
-  // =========================
-
-  else if (action === 'backup') {
-    await downloadBackup();
-  }
-
-  // =========================
-  // HELP
-  // =========================
-
-  else if (action === 'help') {
-    showHelp();
-  }
- 
-  
-  // =========================
-  // CLEAR
-  // =========================
-
-  else if (action === 'clear') {
-    output.replaceChildren();
-
-    // Clear current transaction list too
-    listedTransactions = [];
-  }
-
-  // =========================
-  // UNKNOWN COMMAND
-  // =========================
-
-  else {
-    print(
-      `Error: command not found: ${action}\nType help to see available commands.`,
-      'error'
-    );
-  }
-
-  scrollToLatest();
-}
-
-$('#commandForm').addEventListener('submit', async event => {
-  event.preventDefault();
-
-  const value = input.value.trim();
-  input.value = '';
-
-  // Cloud lock
-  if (!cloudUnlocked && location.protocol !== 'file:') {
-    await unlock(value);
-    return;
-  }
-
-  // Wallet manager / wallet flow
-  if (walletFlow) {
-    if (value) {
-      history.push(value);
-      historyIndex = history.length;
-    }
-
-    try {
-      await continueWalletFlow(value);
-    } catch (error) {
-      print(`Error: ${error.message || 'operation failed.'}`, 'error');
-    }
-
-    input.focus();
-    scrollToLatest();
-    return;
-  }
-
-  // Open Wallet Manager
-  if (value.toLowerCase() === 'wallets') {
-    showWalletManager();
-    input.focus();
-    scrollToLatest();
-    return;
-  }
-
-  // Empty command
-  if (!value) {
-    input.focus();
-    return;
-  }
-
-  // Command history
-  history.push(value);
-  historyIndex = history.length;
-
-  try {
-    await execute(value);
-  } catch (error) {
-    print(`Error: ${error.message || 'operation failed.'}`, 'error');
-  }
-
-  input.focus();
-  scrollToLatest();
-});
+async function execute(raw, echo = true) { if (pendingDueMatch) { if (echo) print(`ahmed@finance:~$ ${raw}`, 'command'); await handleDueMatch(raw); return; } if (editDraft) { if (echo) print(`ahmed@finance:~$ ${raw}`, 'command'); await continueEdit(raw); return; } if (entryDraft) { if (echo) print(`ahmed@finance:~$ ${raw}`, 'command'); await continueEntry(raw); return; } if (dueDraft) { if (echo) print(`ahmed@finance:~$ ${raw}`, 'command'); await continueDue(raw); return; } if (dueEditDraft) { if (echo) print(`ahmed@finance:~$ ${raw}`, 'command'); await continueDueEdit(raw); return; }
+  const command = raw.trim(); if (!command) return; if (echo) print(`ahmed@finance:~$ ${command}`, 'command'); const [rawAction, ...parts] = command.split(/\s+/); const aliases = { expense: 'exp', income: 'inc', dashboard: 'dash', filter: 'filter', fav: 'favorite', categories: 'category', wallets: 'wallet' }; const action = aliases[rawAction.toLowerCase()] || rawAction.toLowerCase();
+  if (action === 'fuel' && ['stats', 'page'].includes(parts[0])) fuelPage();
+  else if (['exp', 'inc', 'fuel'].includes(action)) await startTransaction(action, parts);
+  else if (action === 'dash' || action === 'home') showDashboard(); else if (action === 'list') listTransactions(parts); else if (action === 'filter') listTransactions(['cat', ...parts]); else if (action === 'search') searchTransactions(parts.join(' ')); else if (action === 'edit') await startEdit(parts[0]); else if (action === 'delete') await deleteTransaction(parts[0]); else if (action === 'category') await manageCategory(parts); else if (action === 'wallet') await manageWallet(parts); else if (action === 'due') await manageDue(parts); else if (action === 'favorite') await manageFavorite(parts); else if (action === 'move') await moveMoney(parts); else if (action === 'repeat') { const last = [...transactions].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]; if (!last) print('No transaction to repeat.', 'warning'); else await saveTransaction(last.type, { ...last, id: undefined, createdAt: undefined, updatedAt: undefined, date: today() }); } else if (action === 'undo') await undo(); else if (action === 'settings') await changeSettings(parts); else if (action === 'theme') await setTheme(parts[0]); else if (action === 'report') report(); else if (action === 'backup') await downloadBackup(); else if (action === 'help') showHelp(); else if (action === 'clear') output.replaceChildren(); else print(`Error: command not found: ${action}\nType help to see available commands.`, 'error'); scrollToLatest(); }
+
+$('#commandForm').addEventListener('submit', async event => { event.preventDefault(); const value = input.value; input.value = ''; if (!cloudUnlocked && location.protocol !== 'file:') { await unlock(value); return; } if (value.trim()) { history.push(value); historyIndex = history.length; } try { await execute(value); } catch (error) { print(`Error: ${error.message || 'operation failed.'}`, 'error'); } input.focus(); scrollToLatest(); });
+input.addEventListener('keydown', event => { if (event.key === 'ArrowUp' && history.length) { event.preventDefault(); historyIndex = Math.max(0, historyIndex - 1); input.value = history[historyIndex]; } if (event.key === 'ArrowDown' && history.length) { event.preventDefault(); historyIndex = Math.min(history.length, historyIndex + 1); input.value = historyIndex === history.length ? '' : history[historyIndex]; } });
+document.addEventListener('click', event => { if (!event.target.closest('.terminal-output')) input.focus(); });
+$('#commandForm').addEventListener('submit', async event => { const value = input.value.trim(); if (!walletFlow && value.toLowerCase() !== 'wallets') return; event.preventDefault(); event.stopImmediatePropagation(); input.value = ''; if (value.toLowerCase() === 'wallets') { showWalletManager(); input.focus(); return; } if (value) { history.push(value); historyIndex = history.length; } try { await continueWalletFlow(value); } catch (error) { print(`Error: ${error.message || 'operation failed.'}`, 'error'); } input.focus(); }, true);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+Promise.resolve().then(loadPreferences).then(seedCollections).then(loadData).then(async () => {
+  if (location.protocol === 'file:') { $('#connectionStatus').textContent = 'LOCAL / READY'; showDashboard(); return; }
+  if (cloudPin) await unlock(cloudPin); else showLock();
+}).catch(() => print('Error: unable to open local database.', 'error'));
