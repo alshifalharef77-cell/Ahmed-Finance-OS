@@ -710,12 +710,60 @@ async function execute(raw, echo = true) {
   scrollToLatest();
 }
 
-$('#commandForm').addEventListener('submit', async event => { event.preventDefault(); const value = input.value; input.value = ''; if (!cloudUnlocked && location.protocol !== 'file:') { await unlock(value); return; } if (value.trim()) { history.push(value); historyIndex = history.length; } try { await execute(value); } catch (error) { print(`Error: ${error.message || 'operation failed.'}`, 'error'); } input.focus(); scrollToLatest(); });
-input.addEventListener('keydown', event => { if (event.key === 'ArrowUp' && history.length) { event.preventDefault(); historyIndex = Math.max(0, historyIndex - 1); input.value = history[historyIndex]; } if (event.key === 'ArrowDown' && history.length) { event.preventDefault(); historyIndex = Math.min(history.length, historyIndex + 1); input.value = historyIndex === history.length ? '' : history[historyIndex]; } });
-document.addEventListener('click', event => { if (!event.target.closest('.terminal-output')) input.focus(); });
-$('#commandForm').addEventListener('submit', async event => { const value = input.value.trim(); if (!walletFlow && value.toLowerCase() !== 'wallets') return; event.preventDefault(); event.stopImmediatePropagation(); input.value = ''; if (value.toLowerCase() === 'wallets') { showWalletManager(); input.focus(); return; } if (value) { history.push(value); historyIndex = history.length; } try { await continueWalletFlow(value); } catch (error) { print(`Error: ${error.message || 'operation failed.'}`, 'error'); } input.focus(); }, true);
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(() => {});
-Promise.resolve().then(loadPreferences).then(seedCollections).then(loadData).then(async () => {
-  if (location.protocol === 'file:') { $('#connectionStatus').textContent = 'LOCAL / READY'; showDashboard(); return; }
-  if (cloudPin) await unlock(cloudPin); else showLock();
-}).catch(() => print('Error: unable to open local database.', 'error'));
+$('#commandForm').addEventListener('submit', async event => {
+  event.preventDefault();
+
+  const value = input.value.trim();
+  input.value = '';
+
+  // Cloud lock
+  if (!cloudUnlocked && location.protocol !== 'file:') {
+    await unlock(value);
+    return;
+  }
+
+  // Wallet manager / wallet flow
+  if (walletFlow) {
+    if (value) {
+      history.push(value);
+      historyIndex = history.length;
+    }
+
+    try {
+      await continueWalletFlow(value);
+    } catch (error) {
+      print(`Error: ${error.message || 'operation failed.'}`, 'error');
+    }
+
+    input.focus();
+    scrollToLatest();
+    return;
+  }
+
+  // Open Wallet Manager
+  if (value.toLowerCase() === 'wallets') {
+    showWalletManager();
+    input.focus();
+    scrollToLatest();
+    return;
+  }
+
+  // Empty command
+  if (!value) {
+    input.focus();
+    return;
+  }
+
+  // Command history
+  history.push(value);
+  historyIndex = history.length;
+
+  try {
+    await execute(value);
+  } catch (error) {
+    print(`Error: ${error.message || 'operation failed.'}`, 'error');
+  }
+
+  input.focus();
+  scrollToLatest();
+});
