@@ -199,7 +199,56 @@ function showDashboard() {
   print(parts.join('\n'), 'success');
 }
 
-function showHelp() { print(`ALPHA 0.2.7 COMMANDS\n${divider()}\ndash | home                         dashboard\nexp | inc | fuel                    add a transaction\nlist [all|exp|inc|fuel]             list transactions\nfilter <category> | search <text>   find transactions\nedit <row> | delete <row>           change a listed transaction\nmove <amount> <from> <to>           transfer between wallets\ncategory | wallet                   manage categories and wallets\nfuel stats                           fuel performance\ndue add | due list | due done <row> manage dues\nfavorite | fav                      saved transaction templates\nrepeat | undo                       repeat or undo last change\nsettings | theme                    preferences\nreport | backup | clear | help       reports and utilities\n\nQUICK MODE\nexp <amount> <category> [wallet] [note]\ninc <amount> <category> [wallet] [note]\nfuel <cost> <odometer> <full|partial> [wallet] [note]\n\nWallet codes: ${activeWallets().map(wallet => `${wallet.code.toUpperCase()} ${wallet.name}`).join(' | ')}`, 'muted'); }
+function showHelp() {
+  print(
+    `AHMED FINANCE OS — ALPHA 3.0 COMMANDS
+${divider()}
+
+DASHBOARD
+dash | home                         show dashboard
+help                                show this help
+clear                               clear terminal
+
+TRANSACTIONS
+exp | inc | fuel                    guided transaction entry
+exp <amount> <category> [wallet] [note]
+inc <amount> <category> [wallet] [note]
+fuel <cost> <odometer> <full|partial> [wallet] [note]
+list [all|exp|inc|fuel]             list transactions
+filter <category> | search <text>   find transactions
+edit <row> | delete <row>           edit or delete a listed transaction
+repeat | undo                       repeat or undo recent actions
+
+WALLETS — ALPHA 3.0
+wallets                             open Wallet Manager
+wallet list                         view Calculated / Actual / Difference
+wallet balance <code> <amount>      reconcile one wallet
+wallet audit                        audit all active wallets
+wallet add <code> <name>            add wallet
+wallet rename <code> <name>         rename wallet
+wallet hide <code>                  hide wallet
+wallet restore <code>               restore hidden wallet
+move <amount> <from> <to>           transfer between wallets
+
+FUEL CENTER
+fuel page                           full fuel history and performance report
+fuel stats                          fuel center shortcut
+fuel <cost> <odometer> <full|partial> [wallet] [note]
+
+OTHER
+category                            manage categories
+due add | due list | due done <row> manage dues
+favorite | fav                      saved transaction templates
+settings | theme                    preferences
+report | backup                     reports and backup
+
+Wallet codes:
+${activeWallets()
+  .map(wallet => `${wallet.code.toUpperCase()} ${wallet.name}`)
+  .join(' | ')}`,
+    'muted'
+  );
+}
 
 async function mergeCloudData(remote) {
   for (const store of databaseStores) {
