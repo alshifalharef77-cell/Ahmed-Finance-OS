@@ -79,7 +79,49 @@ function periodTotals(period) {
   const income = sum('inc'), expenses = sum('exp'), fuel = sum('fuel'); return { income, expenses, fuel, balance: income - expenses - fuel };
 }
 function summary(name, period) { const values = periodTotals(period); return `${name}\n${divider()}\nIncome     : ${money(values.income)}\nExpenses   : ${money(values.expenses)}\nFuel       : ${money(values.fuel)}\nBalance    : ${money(values.balance)}`; }
-function walletTable() { const rows = activeWallets().map(wallet => { const income = transactions.filter(item => item.walletCode === wallet.code && item.type === 'inc').reduce((sum, item) => sum + Number(item.amount), 0); const spent = transactions.filter(item => item.walletCode === wallet.code && item.type !== 'inc').reduce((sum, item) => sum + Number(item.amount), 0); return `${pad(wallet.name, 14)} ${money(income - spent)}`; }); return ['WALLET         BALANCE', '-'.repeat(31), ...(rows.length ? rows : ['No active wallets.'])].join('\n'); }
+function calculateWalletBalances() {
+  const balances = new Map(
+    wallets.map(wallet => [
+      wallet.code,
+      {
+        wallet,
+        calculated: 0
+      }
+    ])
+  );
+
+  for (const transaction of transactions) {
+    const wallet = balances.get(transaction.walletCode);
+    if (!wallet) continue;
+
+    const amount = Number(transaction.amount) || 0;
+
+    if (transaction.type === 'inc') {
+      wallet.calculated += amount;
+    } else if (transaction.type === 'exp' || transaction.type === 'fuel') {
+      wallet.calculated -= amount;
+    }
+  }
+
+  return balances;
+}
+
+function walletTable() {
+  const balances = calculateWalletBalances();
+
+  const rows = activeWallets().map(wallet => {
+    const data = balances.get(wallet.code);
+    const calculated = data?.calculated || 0;
+
+    return `${pad(wallet.name, 14)} ${money(calculated)}`;
+  });
+
+  return [
+    'WALLET         BALANCE',
+    '-'.repeat(31),
+    ...(rows.length ? rows : ['No active wallets.'])
+  ].join('\n');
+}
 function dueSummary() { const open = dues.filter(due => !due.paid).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3); if (!open.length) return 'DUE\n' + divider() + '\nNo upcoming dues.'; return `DUE\n${divider()}\n${open.map(due => { const days = isoDays(due.dueDate); return `${pad(due.title, 22)} ${due.amount ? pad(money(due.amount), 14) : pad('-', 14)} ${days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'due today' : `${days} days remaining`}`; }).join('\n')}`; }
 function transactionTable(rows, numbered = false) { if (!rows.length) return 'No transactions found.'; const header = `${numbered ? '#   ' : ''}DATE         TYPE      AMOUNT          WALLET         CATEGORY / ODOMETER       DESCRIPTION`; const lines = rows.map((row, index) => { const detail = row.type === 'fuel' ? `${row.odometer || '-'} km` : row.category; return `${numbered ? `${pad(index + 1, 3)} ` : ''}${pad(dateText(row.date), 12)} ${pad(typeLabels[row.type], 9)} ${pad(money(row.amount), 15)} ${pad(walletName(row.walletCode), 14)} ${pad(detail, 23)} ${String(row.description || '-').slice(0, 24)}`; }); return [header, divider(), ...lines].join('\n'); }
 
